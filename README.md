@@ -6,6 +6,49 @@ The notebook has 3 experiments: (1) retrieval-only test on NevIR, (2) fine-tunin
 
 ---
 
+## The Problem, In Plain English
+
+Before diving into code, here's the plain-language version of what this notebook is actually testing.
+
+**What is a RAG system?**
+A lot of AI chatbots (customer support bots, legal/medical assistants, "chat with your documents" tools) work in two steps:
+1. **Retriever** — a search engine that looks through a pile of documents and pulls out the one that seems most relevant to your question.
+2. **Generator** — a language model (like DistilBERT or GPT) that reads whatever document the retriever handed it and writes an answer.
+
+The generator never sees the whole document library — it only ever sees what the retriever chose to show it. If the retriever hands it the wrong document, the generator has no way of knowing that; it just answers based on what's in front of it.
+
+**Where negation breaks this**
+Compare these two sentences:
+- "This medication is effective for treating infections."
+- "This medication is **not** effective for treating infections."
+
+They mean the exact opposite. But a lot of retrievers — especially the classic keyword-based kind (BM25) — were built in an era when common short words like "the," "is," "a," and **"not"** were treated as "stopwords": noise words to be deleted before search, because they were assumed to carry no useful meaning. So a typical old-school cleaning step turns both sentences above into the exact same bag of words:
+
+```
+medication effective treating infections
+```
+
+Once "not" is deleted, the retriever literally cannot tell the two documents apart anymore — they look identical to it. Ask it "is this medication effective?" and it might hand back the negative document as if it were the positive one, with total confidence, because from its point of view they're the same document.
+
+**Why this is a bigger problem now than it used to be**
+Modern language models (the generator half) are actually very good at understanding negation — they're trained on huge amounts of real text and pick up that "not effective" means the opposite of "effective." But that skill only helps if the generator is given the correct document in the first place. The retriever half of the system never got that same upgrade — a lot of production systems still use 1990s-style keyword search with the same old stopword lists. So you end up with a smart reader being fed the wrong page.
+
+**The actual question this notebook is trying to answer**
+People have separately studied "can retrievers handle negation?" and "can language models handle negation?" — but rarely both *chained together*. That chaining matters because errors might not just add up — they might make each other worse ("compound"). For example:
+- If the retriever is wrong 40% of the time, and the model (given the right document) is wrong 20% of the time, naive math says the combined system should be right about as often as `(1 - 0.40) × (1 - 0.20) ≈ 48%` of the time.
+- But if the model doesn't notice when it's been handed the wrong document — it just answers confidently anyway — the real combined accuracy could be much worse than that naive estimate.
+
+That gap between "predicted accuracy if errors were independent" and "actual accuracy of the real chained system" is the core thing this notebook measures.
+
+**How the notebook tests this, one piece at a time**
+- **Experiment 1** — isolate the retriever. Give it two nearly-identical documents differing only by the word "not," and see how often it picks the right one.
+- **Experiment 2** — isolate the generator. Skip retrieval entirely, always give the model the correct document, and see how well it answers negation-based yes/no questions (before and after fine-tuning).
+- **Experiment 3** — chain them together for real, and compare the actual accuracy against the "if errors were independent" prediction from Experiments 1 and 2.
+
+**One-sentence summary:** classic retrieval systems delete negation words like "not" before searching, which makes them confuse opposite-meaning documents — and because the smart language model downstream just trusts and answers whatever document it's handed, the whole system's accuracy ends up worse than you'd predict from each part's error rate alone.
+
+---
+
 ## Section 0 — Setup
 
 ### Cell: `!pip -q install ...`
